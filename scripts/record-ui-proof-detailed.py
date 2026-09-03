@@ -117,6 +117,35 @@ def response_text(cdp) -> str:
     return str(value)
 
 
+def tool_response_text(cdp, tool_name: str) -> str:
+    tool = json.dumps(tool_name)
+    value = evaluate(
+        cdp,
+        f"""
+        (() => {{
+          const card = [...document.querySelectorAll('.tool-test')].find(item => item.innerText.includes({tool}));
+          return card?.querySelector('pre')?.innerText || '';
+        }})()
+        """,
+    )
+    return str(value)
+
+
+def wait_for_tool_response(cdp, tool_name: str, expected: str, timeout: float = 15) -> None:
+    tool = json.dumps(tool_name)
+    text = json.dumps(expected)
+    wait_for(
+        cdp,
+        f"""
+        (() => {{
+          const card = [...document.querySelectorAll('.tool-test')].find(item => item.innerText.includes({tool}));
+          return Boolean(card?.querySelector('pre')?.innerText.includes({text}));
+        }})()
+        """,
+        timeout,
+    )
+
+
 def set_file_input(cdp) -> None:
     root = cdp.call("DOM.getDocument", {"depth": -1, "pierce": True})["root"]["nodeId"]
     node = cdp.call("DOM.querySelector", {"nodeId": root, "selector": "input[type=file]"})["nodeId"]
@@ -202,12 +231,12 @@ def main() -> None:
               const inputs = [...document.querySelectorAll('input')];
               setValue(inputs[0], 'Detailed CRUD Video Demo');
               setValue(inputs[1], 'http://127.0.0.1:9001');
-              document.querySelector('button').click();
+              [...document.querySelectorAll('button')].find(button => button.textContent.includes('Create project')).click();
               return true;
             })()
             """,
         )
-        wait_for(cdp, "document.body.innerText.includes('Upload an OpenAPI document')")
+        wait_for(cdp, "document.body.innerText.includes('Upload the OpenAPI document')")
         frames.append(save_frame(browser_view(cdp), "detail-02-project.png", "Step 2 - Project created", "Base URL points to the demo API on port 9001."))
 
         set_file_input(cdp)
@@ -220,33 +249,33 @@ def main() -> None:
 
         create_args = {"body": {"id": PRODUCT_ID, "name": "Detailed video plan", "price": 101}}
         set_tool_args_and_call(cdp, "createproduct", create_args)
-        wait_for(cdp, "document.body.innerText.includes('201') && document.body.innerText.includes('Detailed video plan')")
-        frames.append(save_response_frame("detail-05-create-response.png", "Step 5 - createproduct: POST returns 201", create_args, response_text(cdp)))
+        wait_for_tool_response(cdp, "createproduct", "201")
+        frames.append(save_response_frame("detail-05-create-response.png", "Step 5 - createproduct: POST returns 201", create_args, tool_response_text(cdp, "createproduct")))
 
         get_args = {"product_id": PRODUCT_ID}
         set_tool_args_and_call(cdp, "getproduct", get_args)
-        wait_for(cdp, "document.body.innerText.includes('Detailed video plan') && document.body.innerText.includes('status_code')")
-        frames.append(save_response_frame("detail-06-get-response.png", "Step 6 - getproduct: GET returns created product", get_args, response_text(cdp)))
+        wait_for_tool_response(cdp, "getproduct", "Detailed video plan")
+        frames.append(save_response_frame("detail-06-get-response.png", "Step 6 - getproduct: GET returns created product", get_args, tool_response_text(cdp, "getproduct")))
 
         replace_args = {"product_id": PRODUCT_ID, "body": {"id": PRODUCT_ID, "name": "Replaced video plan", "price": 121}}
         set_tool_args_and_call(cdp, "replaceproduct", replace_args)
-        wait_for(cdp, "document.body.innerText.includes('Replaced video plan') && document.body.innerText.includes('121')")
-        frames.append(save_response_frame("detail-07-replace-response.png", "Step 7 - replaceproduct: PUT replaces product", replace_args, response_text(cdp)))
+        wait_for_tool_response(cdp, "replaceproduct", "Replaced video plan")
+        frames.append(save_response_frame("detail-07-replace-response.png", "Step 7 - replaceproduct: PUT replaces product", replace_args, tool_response_text(cdp, "replaceproduct")))
 
         update_args = {"product_id": PRODUCT_ID, "body": {"price": 151}}
         set_tool_args_and_call(cdp, "updateproduct", update_args)
-        wait_for(cdp, "document.body.innerText.includes('151') && document.body.innerText.includes('Replaced video plan')")
-        frames.append(save_response_frame("detail-08-update-response.png", "Step 8 - updateproduct: PATCH updates price", update_args, response_text(cdp)))
+        wait_for_tool_response(cdp, "updateproduct", "151")
+        frames.append(save_response_frame("detail-08-update-response.png", "Step 8 - updateproduct: PATCH updates price", update_args, tool_response_text(cdp, "updateproduct")))
 
         list_args = {"limit": 20}
         set_tool_args_and_call(cdp, "listproducts", list_args)
-        wait_for(cdp, "document.body.innerText.includes('151') && document.body.innerText.includes('items')")
-        frames.append(save_response_frame("detail-09-list-response.png", "Step 9 - listproducts: GET list shows update", list_args, response_text(cdp)))
+        wait_for_tool_response(cdp, "listproducts", PRODUCT_ID)
+        frames.append(save_response_frame("detail-09-list-response.png", "Step 9 - listproducts: GET list shows update", list_args, tool_response_text(cdp, "listproducts")))
 
         delete_args = {"product_id": PRODUCT_ID}
         set_tool_args_and_call(cdp, "deleteproduct", delete_args)
-        wait_for(cdp, "document.body.innerText.includes('200') && document.body.innerText.includes('Replaced video plan')")
-        frames.append(save_response_frame("detail-10-delete-response.png", "Step 10 - deleteproduct: DELETE returns removed product", delete_args, response_text(cdp)))
+        wait_for_tool_response(cdp, "deleteproduct", "Replaced video plan")
+        frames.append(save_response_frame("detail-10-delete-response.png", "Step 10 - deleteproduct: DELETE returns removed product", delete_args, tool_response_text(cdp, "deleteproduct")))
         cdp.close()
     finally:
         process.terminate()

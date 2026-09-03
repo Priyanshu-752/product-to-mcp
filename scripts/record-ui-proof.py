@@ -356,12 +356,12 @@ def main() -> None:
               const inputs = [...document.querySelectorAll('input')];
               setValue(inputs[0], 'Recorded CRUD Demo');
               setValue(inputs[1], 'http://127.0.0.1:9001');
-              document.querySelector('button').click();
+              [...document.querySelectorAll('button')].find(button => button.textContent.includes('Create project')).click();
               return true;
             })()
             """,
         )
-        wait_for(cdp, "document.body.innerText.includes('Upload an OpenAPI document')")
+        wait_for(cdp, "document.body.innerText.includes('Upload the OpenAPI document')")
         screenshot(cdp, "02-project-created.png", frames)
 
         set_file_input(cdp)

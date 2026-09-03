@@ -13,6 +13,16 @@ from product_to_mcp.openapi.parser import parse_document
 from product_to_mcp.smithery.publisher import SmitheryPublisher
 
 
+def public_mcp_url(request: Request, deployment_slug: str) -> str:
+    return f"{request.app.state.settings.public_base_url.rstrip('/')}/mcp/{deployment_slug}/mcp"
+
+
+def release_response(request: Request, release: Any) -> dict[str, Any]:
+    data = release.model_dump(mode="json")
+    data["mcp_url"] = public_mcp_url(request, release.deployment_slug)
+    return data
+
+
 class CreateProjectBody(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     base_url: HttpUrl
@@ -90,7 +100,8 @@ def create_router() -> APIRouter:
         try:
             _, operations, selected = request.app.state.store.source(project_id)
             tools = compile_tools(operations, selected)
-            return request.app.state.store.create_release(project_id, tools)
+            release = request.app.state.store.create_release(project_id, tools)
+            return release_response(request, release)
         except KeyError as error:
             raise HTTPException(404, "OpenAPI source not found.") from error
         except ValueError as error:
@@ -99,7 +110,8 @@ def create_router() -> APIRouter:
     @router.get("/releases/{release_id}")
     async def get_release(release_id: str, request: Request):
         try:
-            return request.app.state.store.release(release_id=release_id)
+            release = request.app.state.store.release(release_id=release_id)
+            return release_response(request, release)
         except KeyError as error:
             raise HTTPException(404, "Release not found.") from error
 
@@ -121,7 +133,7 @@ def create_router() -> APIRouter:
             release = request.app.state.store.release(release_id=release_id)
         except KeyError as error:
             raise HTTPException(404, "Release not found.") from error
-        mcp_url = f"{request.app.state.settings.public_base_url.rstrip('/')}/mcp/{release.deployment_slug}/mcp"
+        mcp_url = public_mcp_url(request, release.deployment_slug)
         publisher = SmitheryPublisher(request.app.state.settings.smithery_api_url)
         try:
             result = await publisher.publish(api_key=body.smithery_api_key, qualified_name=f"{body.namespace}/{body.server_name}", mcp_url=mcp_url)

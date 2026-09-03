@@ -10,7 +10,19 @@ export type Operation = {
 
 export type Release = {
   release_id: string; deployment_slug: string; project_id: string;
+  mcp_url?: string;
   manifest_hash: string; tools: Array<{ name: string; description: string; method: string; path: string; input_schema: Record<string, unknown> }>;
+};
+
+export type SmitheryPublishResponse = {
+  mcp_url: string;
+  smithery: {
+    deploymentId?: string;
+    status?: string;
+    mcpUrl?: string;
+    warnings?: string[];
+    [key: string]: unknown;
+  };
 };
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
@@ -31,5 +43,5 @@ export const api = {
   select: (projectId: string, operation_ids: string[]) => call<{ selected: string[] }>(`/v1/projects/${projectId}/operations`, { method: "PUT", body: JSON.stringify({ operation_ids }) }),
   release: (projectId: string) => call<Release>(`/v1/projects/${projectId}/releases`, { method: "POST" }),
   test: (releaseId: string, tool_name: string, arguments_: Record<string, unknown>) => call<{ result: unknown }>(`/v1/releases/${releaseId}/test`, { method: "POST", body: JSON.stringify({ tool_name, arguments: arguments_ }) }),
-  publish: (releaseId: string, body: Record<string, string>) => call<{ mcp_url: string; smithery: unknown }>(`/v1/releases/${releaseId}/smithery/publish`, { method: "POST", body: JSON.stringify(body) }),
+  publish: (releaseId: string, body: Record<string, string>) => call<SmitheryPublishResponse>(`/v1/releases/${releaseId}/smithery/publish`, { method: "POST", body: JSON.stringify(body) }),
 };
