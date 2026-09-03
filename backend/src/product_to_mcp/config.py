@@ -6,6 +6,37 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 
+def load_local_env_files() -> None:
+    """Load local env files when developing outside hosted platforms.
+
+    Render and other platforms inject real environment variables directly.
+    Local files are deliberately optional so production startup never depends
+    on files that should not be committed.
+    """
+
+    if os.getenv("PRODUCT_TO_MCP_SKIP_DOTENV") == "1":
+        return
+
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return
+
+    repo_root = Path(__file__).resolve().parents[3]
+    roots = (repo_root, Path.cwd())
+    filenames = (".env", ".env.local", "backend/.env", "backend/.env.local")
+    seen: set[Path] = set()
+
+    for root in roots:
+        for filename in filenames:
+            env_file = (root / filename).resolve()
+            if env_file in seen:
+                continue
+            seen.add(env_file)
+            if env_file.is_file():
+                load_dotenv(env_file, override=env_file.name.endswith(".local"))
+
+
 def env_list(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
     raw = os.getenv(name)
     if raw is None:
@@ -33,6 +64,7 @@ class Settings(BaseModel):
 
     @classmethod
     def from_env(cls) -> "Settings":
+        load_local_env_files()
         raw_database = os.getenv(
             "PRODUCT_TO_MCP_DATABASE_URL", "sqlite:///./.runtime/product-to-mcp.sqlite3"
         )
