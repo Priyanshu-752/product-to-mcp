@@ -25,9 +25,11 @@ export type SmitheryPublishResponse = {
   };
 };
 
+const apiBaseUrl = (import.meta.env.VITE_PRODUCT_TO_MCP_API_BASE_URL || "").replace(/\/+$/, "");
+
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = init?.body instanceof FormData ? { ...(init?.headers || {}) } : { "Content-Type": "application/json", ...(init?.headers || {}) };
-  const response = await fetch(path, { ...init, headers });
+  const response = await fetch(`${apiBaseUrl}${path}`, { ...init, headers });
   if (!response.ok) throw new Error(await response.text() || `Request failed: ${response.status}`);
   return response.json() as Promise<T>;
 }

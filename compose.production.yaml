@@ -1,0 +1,28 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment:
+      PRODUCT_TO_MCP_ENV: production
+      PRODUCT_TO_MCP_DATABASE_URL: ${PRODUCT_TO_MCP_DATABASE_URL}
+      PRODUCT_TO_MCP_PUBLIC_BASE_URL: ${PRODUCT_TO_MCP_PUBLIC_BASE_URL}
+      PRODUCT_TO_MCP_CORS_ORIGINS: ${PRODUCT_TO_MCP_CORS_ORIGINS}
+      PRODUCT_TO_MCP_ALLOWED_HOSTS: ${PRODUCT_TO_MCP_ALLOWED_HOSTS}
+      PRODUCT_TO_MCP_SMITHERY_API_URL: https://api.smithery.ai
+      PRODUCT_TO_MCP_MAX_OPENAPI_BYTES: 20971520
+      PRODUCT_TO_MCP_MCP_BEARER_TOKEN: ${PRODUCT_TO_MCP_MCP_BEARER_TOKEN:-}
+      PRODUCT_TO_MCP_SECRET_ENCRYPTION_KEY: ${PRODUCT_TO_MCP_SECRET_ENCRYPTION_KEY}
+    ports:
+      - "8000:8000"
+    volumes:
+      - product_to_mcp_runtime:/app/.runtime
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/readyz', timeout=5)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  product_to_mcp_runtime:

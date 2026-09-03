@@ -4,4 +4,6 @@ COPY pyproject.toml .
 COPY src ./src
 RUN pip install --no-cache-dir .
 ENV PYTHONPATH=/app/src
-
+EXPOSE 8000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 CMD python -c "import os, urllib.request; urllib.request.urlopen(f\"http://127.0.0.1:{os.getenv('PORT', '8000')}/healthz\", timeout=5)"
+CMD ["sh", "-c", "uvicorn product_to_mcp.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

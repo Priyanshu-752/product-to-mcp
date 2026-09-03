@@ -3,27 +3,28 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
-import sqlite3
-from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from product_to_mcp.domain.models import Operation, Project, Release, ToolManifest, now
 
 
-class SQLiteStore:
-    def __init__(self, path: Path) -> None:
-        self.path = path
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+class PostgresStore:
+    def __init__(self, database_url: str) -> None:
+        from psycopg.rows import dict_row
+
+        self.database_url = self._normalize_database_url(database_url)
+        self.row_factory = dict_row
         self._initialize()
 
-    def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.path)
-        connection.row_factory = sqlite3.Row
-        return connection
+    def _connect(self):
+        import psycopg
+
+        return psycopg.connect(self.database_url, autocommit=True, row_factory=self.row_factory)
 
     def _initialize(self) -> None:
         with self._connect() as db:
-            db.executescript(
+            db.execute(
                 """
                 CREATE TABLE IF NOT EXISTS projects (
                     project_id TEXT PRIMARY KEY,
@@ -61,7 +62,9 @@ class SQLiteStore:
     def health_check(self) -> None:
         with self._connect() as db:
             db.execute("SELECT 1").fetchone()
-            db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='projects'").fetchone()
+            db.execute(
+                "SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name='projects'"
+            ).fetchone()
 
     def create_project(self, name: str, base_url: str, auth_type: str, api_key_header: str) -> Project:
         project = Project(
@@ -74,9 +77,15 @@ class SQLiteStore:
         )
         with self._connect() as db:
             db.execute(
-                "INSERT INTO projects VALUES (?,?,?,?,?,?)",
-                (project.project_id, project.name, project.base_url, project.auth_type,
-                 project.api_key_header, project.created_at.isoformat()),
+                "INSERT INTO projects VALUES (%s,%s,%s,%s,%s,%s)",
+                (
+                    project.project_id,
+                    project.name,
+                    project.base_url,
+                    project.auth_type,
+                    project.api_key_header,
+                    project.created_at.isoformat(),
+                ),
             )
         return project
 
@@ -87,25 +96,40 @@ class SQLiteStore:
 
     def project(self, project_id: str) -> Project:
         with self._connect() as db:
-            row = db.execute("SELECT * FROM projects WHERE project_id=?", (project_id,)).fetchone()
+            row = db.execute("SELECT * FROM projects WHERE project_id=%s", (project_id,)).fetchone()
         if row is None:
             raise KeyError("project_not_found")
         return self._project(row)
 
-    def save_source(self, project_id: str, source: dict[str, Any], operations: tuple[Operation, ...], selected: tuple[str, ...] = ()) -> None:
+    def save_source(
+        self,
+        project_id: str,
+        source: dict[str, Any],
+        operations: tuple[Operation, ...],
+        selected: tuple[str, ...] = (),
+    ) -> None:
         with self._connect() as db:
             db.execute(
-                "INSERT INTO sources(project_id,source_json,operations_json,selected_json) VALUES(?,?,?,?) "
+                "INSERT INTO sources(project_id,source_json,operations_json,selected_json) VALUES(%s,%s,%s,%s) "
                 "ON CONFLICT(project_id) DO UPDATE SET source_json=excluded.source_json, operations_json=excluded.operations_json, selected_json=excluded.selected_json",
-                (project_id, json.dumps(source), json.dumps([item.model_dump(mode="json") for item in operations]), json.dumps(list(selected))),
+                (
+                    project_id,
+                    json.dumps(source),
+                    json.dumps([item.model_dump(mode="json") for item in operations]),
+                    json.dumps(list(selected)),
+                ),
             )
 
     def source(self, project_id: str) -> tuple[dict[str, Any], tuple[Operation, ...], tuple[str, ...]]:
         with self._connect() as db:
-            row = db.execute("SELECT * FROM sources WHERE project_id=?", (project_id,)).fetchone()
+            row = db.execute("SELECT * FROM sources WHERE project_id=%s", (project_id,)).fetchone()
         if row is None:
             raise KeyError("source_not_found")
-        return json.loads(row["source_json"]), tuple(Operation.model_validate(item) for item in json.loads(row["operations_json"])), tuple(json.loads(row["selected_json"]))
+        return (
+            json.loads(row["source_json"]),
+            tuple(Operation.model_validate(item) for item in json.loads(row["operations_json"])),
+            tuple(json.loads(row["selected_json"])),
+        )
 
     def select_operations(self, project_id: str, selected: tuple[str, ...]) -> tuple[Operation, ...]:
         source, operations, _ = self.source(project_id)
@@ -119,44 +143,78 @@ class SQLiteStore:
         serialized = [tool.model_dump(mode="json") for tool in tools]
         manifest_hash = hashlib.sha256(json.dumps(serialized, sort_keys=True).encode()).hexdigest()
         release = Release(
-            release_id=secrets.token_urlsafe(9), deployment_slug=secrets.token_urlsafe(12),
-            project_id=project_id, manifest_hash=manifest_hash, tools=tools, created_at=now(),
+            release_id=secrets.token_urlsafe(9),
+            deployment_slug=secrets.token_urlsafe(12),
+            project_id=project_id,
+            manifest_hash=manifest_hash,
+            tools=tools,
+            created_at=now(),
         )
         with self._connect() as db:
-            db.execute("INSERT INTO releases VALUES (?,?,?,?,?,?)", (release.release_id, release.deployment_slug, project_id, manifest_hash, json.dumps(serialized), release.created_at.isoformat()))
+            db.execute(
+                "INSERT INTO releases VALUES (%s,%s,%s,%s,%s,%s)",
+                (
+                    release.release_id,
+                    release.deployment_slug,
+                    project_id,
+                    manifest_hash,
+                    json.dumps(serialized),
+                    release.created_at.isoformat(),
+                ),
+            )
         return release
 
     def put_secret(self, project_id: str, encrypted_value: str | None) -> None:
         with self._connect() as db:
             if encrypted_value is None:
-                db.execute("DELETE FROM upstream_secrets WHERE project_id=?", (project_id,))
+                db.execute("DELETE FROM upstream_secrets WHERE project_id=%s", (project_id,))
                 return
             db.execute(
-                "INSERT INTO upstream_secrets(project_id,encrypted_value,updated_at) VALUES(?,?,?) "
+                "INSERT INTO upstream_secrets(project_id,encrypted_value,updated_at) VALUES(%s,%s,%s) "
                 "ON CONFLICT(project_id) DO UPDATE SET encrypted_value=excluded.encrypted_value, updated_at=excluded.updated_at",
                 (project_id, encrypted_value, now().isoformat()),
             )
 
     def get_secret(self, project_id: str) -> str | None:
         with self._connect() as db:
-            row = db.execute("SELECT encrypted_value FROM upstream_secrets WHERE project_id=?", (project_id,)).fetchone()
+            row = db.execute("SELECT encrypted_value FROM upstream_secrets WHERE project_id=%s", (project_id,)).fetchone()
         if row is None:
             return None
         return row["encrypted_value"]
 
     def release(self, release_id: str | None = None, deployment_slug: str | None = None) -> Release:
-        query = "SELECT * FROM releases WHERE release_id=?" if release_id else "SELECT * FROM releases WHERE deployment_slug=?"
+        query = "SELECT * FROM releases WHERE release_id=%s" if release_id else "SELECT * FROM releases WHERE deployment_slug=%s"
         value = release_id or deployment_slug
         with self._connect() as db:
             row = db.execute(query, (value,)).fetchone()
         if row is None:
             raise KeyError("release_not_found")
         return Release(
-            release_id=row["release_id"], deployment_slug=row["deployment_slug"], project_id=row["project_id"],
-            manifest_hash=row["manifest_hash"], tools=tuple(ToolManifest.model_validate(item) for item in json.loads(row["tools_json"])),
+            release_id=row["release_id"],
+            deployment_slug=row["deployment_slug"],
+            project_id=row["project_id"],
+            manifest_hash=row["manifest_hash"],
+            tools=tuple(ToolManifest.model_validate(item) for item in json.loads(row["tools_json"])),
             created_at=row["created_at"],
         )
 
     @staticmethod
-    def _project(row: sqlite3.Row) -> Project:
-        return Project(project_id=row["project_id"], name=row["name"], base_url=row["base_url"], auth_type=row["auth_type"], api_key_header=row["api_key_header"], created_at=row["created_at"])
+    def _normalize_database_url(database_url: str) -> str:
+        parsed = urlsplit(database_url)
+        query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+        hostname = parsed.hostname or ""
+        if hostname.endswith(".render.com") and "sslmode" not in query:
+            query["sslmode"] = "require"
+            return urlunsplit(parsed._replace(query=urlencode(query)))
+        return database_url
+
+    @staticmethod
+    def _project(row: dict[str, Any]) -> Project:
+        return Project(
+            project_id=row["project_id"],
+            name=row["name"],
+            base_url=row["base_url"],
+            auth_type=row["auth_type"],
+            api_key_header=row["api_key_header"],
+            created_at=row["created_at"],
+        )

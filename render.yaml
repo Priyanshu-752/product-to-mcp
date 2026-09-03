@@ -1,0 +1,41 @@
+services:
+  - type: web
+    name: product-to-mcp-backend
+    runtime: docker
+    rootDir: backend
+    region: singapore
+    plan: 0.5c-512mb
+    healthCheckPath: /readyz
+    envVars:
+      - key: PRODUCT_TO_MCP_ENV
+        value: production
+      - key: PRODUCT_TO_MCP_DATABASE_URL
+        sync: false
+      - key: PRODUCT_TO_MCP_PUBLIC_BASE_URL
+        sync: false
+      - key: PRODUCT_TO_MCP_CORS_ORIGINS
+        sync: false
+      - key: PRODUCT_TO_MCP_ALLOWED_HOSTS
+        sync: false
+      - key: PRODUCT_TO_MCP_SMITHERY_API_URL
+        value: https://api.smithery.ai
+      - key: PRODUCT_TO_MCP_MAX_OPENAPI_BYTES
+        value: 20971520
+      - key: PRODUCT_TO_MCP_MCP_BEARER_TOKEN
+        sync: false
+      - key: PRODUCT_TO_MCP_SECRET_ENCRYPTION_KEY
+        generateValue: true
+
+  - type: web
+    name: product-to-mcp-frontend
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_PRODUCT_TO_MCP_API_BASE_URL
+        sync: false
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
