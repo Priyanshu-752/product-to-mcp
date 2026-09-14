@@ -1,0 +1,756 @@
+openapi: 3.0.3
+info:
+  title: Large Catalog API
+  version: 1.0.0
+paths:
+  /items/1:
+    get:
+      operationId: getItem1
+      tags: [Catalog]
+      summary: Get item 1
+      responses:
+        "200":
+          description: Item 1
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/2:
+    get:
+      operationId: getItem2
+      tags: [Catalog]
+      summary: Get item 2
+      responses:
+        "200":
+          description: Item 2
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/3:
+    get:
+      operationId: getItem3
+      tags: [Catalog]
+      summary: Get item 3
+      responses:
+        "200":
+          description: Item 3
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/4:
+    get:
+      operationId: getItem4
+      tags: [Catalog]
+      summary: Get item 4
+      responses:
+        "200":
+          description: Item 4
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/5:
+    get:
+      operationId: getItem5
+      tags: [Catalog]
+      summary: Get item 5
+      responses:
+        "200":
+          description: Item 5
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/6:
+    get:
+      operationId: getItem6
+      tags: [Catalog]
+      summary: Get item 6
+      responses:
+        "200":
+          description: Item 6
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/7:
+    get:
+      operationId: getItem7
+      tags: [Catalog]
+      summary: Get item 7
+      responses:
+        "200":
+          description: Item 7
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/8:
+    get:
+      operationId: getItem8
+      tags: [Catalog]
+      summary: Get item 8
+      responses:
+        "200":
+          description: Item 8
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/9:
+    get:
+      operationId: getItem9
+      tags: [Catalog]
+      summary: Get item 9
+      responses:
+        "200":
+          description: Item 9
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/10:
+    get:
+      operationId: getItem10
+      tags: [Catalog]
+      summary: Get item 10
+      responses:
+        "200":
+          description: Item 10
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/11:
+    get:
+      operationId: getItem11
+      tags: [Catalog]
+      summary: Get item 11
+      responses:
+        "200":
+          description: Item 11
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/12:
+    get:
+      operationId: getItem12
+      tags: [Catalog]
+      summary: Get item 12
+      responses:
+        "200":
+          description: Item 12
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/13:
+    get:
+      operationId: getItem13
+      tags: [Catalog]
+      summary: Get item 13
+      responses:
+        "200":
+          description: Item 13
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/14:
+    get:
+      operationId: getItem14
+      tags: [Catalog]
+      summary: Get item 14
+      responses:
+        "200":
+          description: Item 14
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/15:
+    get:
+      operationId: getItem15
+      tags: [Catalog]
+      summary: Get item 15
+      responses:
+        "200":
+          description: Item 15
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/16:
+    get:
+      operationId: getItem16
+      tags: [Catalog]
+      summary: Get item 16
+      responses:
+        "200":
+          description: Item 16
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/17:
+    get:
+      operationId: getItem17
+      tags: [Catalog]
+      summary: Get item 17
+      responses:
+        "200":
+          description: Item 17
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/18:
+    get:
+      operationId: getItem18
+      tags: [Catalog]
+      summary: Get item 18
+      responses:
+        "200":
+          description: Item 18
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/19:
+    get:
+      operationId: getItem19
+      tags: [Catalog]
+      summary: Get item 19
+      responses:
+        "200":
+          description: Item 19
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/20:
+    get:
+      operationId: getItem20
+      tags: [Catalog]
+      summary: Get item 20
+      responses:
+        "200":
+          description: Item 20
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/21:
+    get:
+      operationId: getItem21
+      tags: [Catalog]
+      summary: Get item 21
+      responses:
+        "200":
+          description: Item 21
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/22:
+    get:
+      operationId: getItem22
+      tags: [Catalog]
+      summary: Get item 22
+      responses:
+        "200":
+          description: Item 22
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/23:
+    get:
+      operationId: getItem23
+      tags: [Catalog]
+      summary: Get item 23
+      responses:
+        "200":
+          description: Item 23
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/24:
+    get:
+      operationId: getItem24
+      tags: [Catalog]
+      summary: Get item 24
+      responses:
+        "200":
+          description: Item 24
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/25:
+    get:
+      operationId: getItem25
+      tags: [Catalog]
+      summary: Get item 25
+      responses:
+        "200":
+          description: Item 25
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/26:
+    get:
+      operationId: getItem26
+      tags: [Inventory]
+      summary: Get item 26
+      responses:
+        "200":
+          description: Item 26
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/27:
+    get:
+      operationId: getItem27
+      tags: [Inventory]
+      summary: Get item 27
+      responses:
+        "200":
+          description: Item 27
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/28:
+    get:
+      operationId: getItem28
+      tags: [Inventory]
+      summary: Get item 28
+      responses:
+        "200":
+          description: Item 28
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/29:
+    get:
+      operationId: getItem29
+      tags: [Inventory]
+      summary: Get item 29
+      responses:
+        "200":
+          description: Item 29
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/30:
+    get:
+      operationId: getItem30
+      tags: [Inventory]
+      summary: Get item 30
+      responses:
+        "200":
+          description: Item 30
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/31:
+    get:
+      operationId: getItem31
+      tags: [Inventory]
+      summary: Get item 31
+      responses:
+        "200":
+          description: Item 31
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/32:
+    get:
+      operationId: getItem32
+      tags: [Inventory]
+      summary: Get item 32
+      responses:
+        "200":
+          description: Item 32
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/33:
+    get:
+      operationId: getItem33
+      tags: [Inventory]
+      summary: Get item 33
+      responses:
+        "200":
+          description: Item 33
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/34:
+    get:
+      operationId: getItem34
+      tags: [Inventory]
+      summary: Get item 34
+      responses:
+        "200":
+          description: Item 34
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/35:
+    get:
+      operationId: getItem35
+      tags: [Inventory]
+      summary: Get item 35
+      responses:
+        "200":
+          description: Item 35
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/36:
+    get:
+      operationId: getItem36
+      tags: [Inventory]
+      summary: Get item 36
+      responses:
+        "200":
+          description: Item 36
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/37:
+    get:
+      operationId: getItem37
+      tags: [Inventory]
+      summary: Get item 37
+      responses:
+        "200":
+          description: Item 37
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/38:
+    get:
+      operationId: getItem38
+      tags: [Inventory]
+      summary: Get item 38
+      responses:
+        "200":
+          description: Item 38
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/39:
+    get:
+      operationId: getItem39
+      tags: [Inventory]
+      summary: Get item 39
+      responses:
+        "200":
+          description: Item 39
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/40:
+    get:
+      operationId: getItem40
+      tags: [Inventory]
+      summary: Get item 40
+      responses:
+        "200":
+          description: Item 40
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/41:
+    get:
+      operationId: getItem41
+      tags: [Inventory]
+      summary: Get item 41
+      responses:
+        "200":
+          description: Item 41
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/42:
+    get:
+      operationId: getItem42
+      tags: [Inventory]
+      summary: Get item 42
+      responses:
+        "200":
+          description: Item 42
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/43:
+    get:
+      operationId: getItem43
+      tags: [Inventory]
+      summary: Get item 43
+      responses:
+        "200":
+          description: Item 43
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/44:
+    get:
+      operationId: getItem44
+      tags: [Inventory]
+      summary: Get item 44
+      responses:
+        "200":
+          description: Item 44
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/45:
+    get:
+      operationId: getItem45
+      tags: [Inventory]
+      summary: Get item 45
+      responses:
+        "200":
+          description: Item 45
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/46:
+    get:
+      operationId: getItem46
+      tags: [Inventory]
+      summary: Get item 46
+      responses:
+        "200":
+          description: Item 46
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/47:
+    get:
+      operationId: getItem47
+      tags: [Inventory]
+      summary: Get item 47
+      responses:
+        "200":
+          description: Item 47
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/48:
+    get:
+      operationId: getItem48
+      tags: [Inventory]
+      summary: Get item 48
+      responses:
+        "200":
+          description: Item 48
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/49:
+    get:
+      operationId: getItem49
+      tags: [Inventory]
+      summary: Get item 49
+      responses:
+        "200":
+          description: Item 49
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+  /items/50:
+    get:
+      operationId: getItem50
+      tags: [Inventory]
+      summary: Get item 50
+      responses:
+        "200":
+          description: Item 50
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+

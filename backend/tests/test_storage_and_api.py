@@ -1,3 +1,5 @@
+import sqlite3
+
 from fastapi.testclient import TestClient
 
 from product_to_mcp.config import Settings
@@ -23,19 +25,19 @@ def test_project_upload_and_release_flow(tmp_path, monkeypatch) -> None:
             files={"file": ("demo.yaml", b"openapi: 3.0.3\ninfo: {title: Demo, version: '1'}\npaths:\n  /items:\n    get:\n      operationId: listItems\n      responses: {'200': {description: ok}}\n", "application/yaml")},
         )
         assert upload.status_code == 200
-        assert upload.json()["operations"][0]["tool_name"] == "listitems"
+        assert upload.json()["operations"][0]["tool_name"] == "list_items"
         selection = client.put(f"/v1/projects/{project_id}/operations", json={"operation_ids": ["listItems"]})
         assert selection.status_code == 200
         release = client.post(f"/v1/projects/{project_id}/releases")
         assert release.status_code == 200
-        assert release.json()["tools"][0]["name"] == "listitems"
+        assert release.json()["tools"][0]["name"] == "list_items"
         assert release.json()["mcp_url"].endswith(f"/mcp/{release.json()['deployment_slug']}/mcp")
         mcp = client.post(
             f"/mcp/{release.json()['deployment_slug']}/mcp",
             json={"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
         )
         assert mcp.status_code == 200
-        assert mcp.json()["result"]["tools"][0]["name"] == "listitems"
+        assert mcp.json()["result"]["tools"][0]["name"] == "list_items"
 
 
 def test_mcp_endpoint_can_require_bearer_token(tmp_path, monkeypatch) -> None:
@@ -82,3 +84,18 @@ def test_database_secret_store_persists_encrypted_values(tmp_path) -> None:
 
     assert secrets.get(project.project_id) == "upstream-secret"
     assert store.get_secret(project.project_id) != "upstream-secret"
+
+
+def test_sqlite_action_layer_migration_is_idempotent(tmp_path) -> None:
+    database = tmp_path / "migrations.sqlite3"
+    SQLiteStore(database)
+    SQLiteStore(database)
+
+    with sqlite3.connect(database) as connection:
+        versions = connection.execute("SELECT version FROM schema_migrations ORDER BY version").fetchall()
+        release_columns = {row[1] for row in connection.execute("PRAGMA table_info(releases)").fetchall()}
+        tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+
+    assert versions == [(1,)]
+    assert "profile_id" in release_columns
+    assert {"operation_groups", "operation_group_members", "actions", "tool_profiles"} <= tables

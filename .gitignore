@@ -6,6 +6,7 @@ __pycache__/
 backend/.pytest_cache/
 frontend/node_modules/
 frontend/dist/
+frontend/playwright-report/
+frontend/test-results/
 .runtime/
 *.sqlite3
-

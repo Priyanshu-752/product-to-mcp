@@ -7,6 +7,7 @@ paths:
     get:
       operationId: listProducts
       summary: List products
+      tags: [Product Catalog]
       parameters:
         - name: limit
           in: query
@@ -18,30 +19,39 @@ paths:
       responses:
         '200':
           description: Product list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Product'
+                  count:
+                    type: integer
     post:
       operationId: createProduct
       summary: Create product
+      tags: [Product Catalog]
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required: [id, name, price]
-              properties:
-                id:
-                  type: string
-                name:
-                  type: string
-                price:
-                  type: number
+              $ref: '#/components/schemas/Product'
       responses:
         '201':
           description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
   /products/{product_id}:
     get:
       operationId: getProduct
       summary: Get one product
+      tags: [Product Catalog]
       parameters:
         - name: product_id
           in: path
@@ -51,9 +61,14 @@ paths:
       responses:
         '200':
           description: Product
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
     put:
       operationId: replaceProduct
       summary: Replace product
+      tags: [Product Catalog]
       parameters:
         - name: product_id
           in: path
@@ -65,21 +80,18 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [id, name, price]
-              properties:
-                id:
-                  type: string
-                name:
-                  type: string
-                price:
-                  type: number
+              $ref: '#/components/schemas/Product'
       responses:
         '200':
           description: Replaced
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
     patch:
       operationId: updateProduct
       summary: Update product
+      tags: [Product Catalog]
       parameters:
         - name: product_id
           in: path
@@ -100,9 +112,14 @@ paths:
       responses:
         '200':
           description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
     delete:
       operationId: deleteProduct
       summary: Delete product
+      tags: [Product Catalog]
       parameters:
         - name: product_id
           in: path
@@ -112,3 +129,24 @@ paths:
       responses:
         '200':
           description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+                  product_id:
+                    type: string
+components:
+  schemas:
+    Product:
+      type: object
+      required: [id, name, price]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        price:
+          type: number

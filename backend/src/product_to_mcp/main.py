@@ -30,7 +30,7 @@ def create_app() -> FastAPI:
         if settings.secret_encryption_key
         else PrototypeSecretStore()
     )
-    gateway = MCPGateway(store, secrets)
+    gateway = MCPGateway(store, secrets, settings)
     app = FastAPI(title="Product-to-MCP Prototype", version="0.1.0")
 
     if settings.allowed_hosts != ("*",):
@@ -40,7 +40,7 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=list(settings.cors_origins),
         allow_credentials=False,
-        allow_methods=["GET", "POST", "PUT", "OPTIONS"],
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["*"],
     )
 
@@ -105,6 +105,8 @@ def create_app() -> FastAPI:
             "public_base_url_https": str(settings.public_base_url_is_https).lower(),
             "mcp_auth_configured": str(settings.mcp_bearer_token is not None).lower(),
             "persistent_secrets": str(settings.secret_encryption_key is not None).lower(),
+            "legacy_release_creation": str(settings.allow_legacy_releases).lower(),
+            "max_chain_steps": str(settings.max_chain_steps),
         }
 
     @app.post("/mcp/{deployment_slug}/mcp")

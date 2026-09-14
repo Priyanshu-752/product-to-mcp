@@ -1,9 +1,21 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { api, type Operation, type Project, type Release, type SmitheryPublishResponse } from "./api";
+import { api, type Project, type Release, type ReleaseMode, type SmitheryPublishResponse, type ToolProfile, type Workspace } from "./api";
+import { ActionStudio } from "./features/ActionStudio";
 
 type Tool = Release["tools"][number];
 type AuthType = "bearer" | "api_key" | "none";
 type StepId = "setup" | "openapi" | "tools" | "release";
+export type SmitheryPublishForm = {
+  namespace: string;
+  server_name: string;
+  smithery_api_key: string;
+  display_name: string;
+  description: string;
+  homepage: string;
+  icon_url: string;
+};
+
+export type SmitheryPublishTool = Pick<Tool, "kind" | "name" | "description" | "output_schema" | "annotations">;
 
 type AuthOption = {
   value: AuthType;
@@ -93,6 +105,73 @@ function serverSlug(name: string): string {
   return slug || "product-mcp";
 }
 
+export function openapiGenerationPrompt(): string {
+  return `You are working inside a backend or API project. The project may use any programming language, framework, database, or architecture.
+
+Create one complete OpenAPI 3.1 YAML file named openapi.yaml. This must be a machine-readable API contract, not source code, a Postman collection, an API response, or general documentation. The file will be uploaded to a tool that converts API operations into MCP tools.
+
+Requirements:
+- Inspect the entire project and identify the real HTTP routes, controllers/handlers, request validators, response models, authentication middleware, and existing API documentation. Do not assume a particular framework.
+- Do not invent endpoints, fields, authentication methods, or response structures. If something cannot be determined from the project, report it after creating the file.
+- Include the standard OpenAPI structure: openapi, info, servers, paths, components/schemas, and components/securitySchemes when authentication exists.
+- Determine the public API base URL from project configuration or documentation. If it is not available, use the relative server URL / instead of assuming localhost or inventing a domain.
+- Document every public endpoint that should become an MCP tool, including its HTTP method and path.
+- Give every operation a unique, descriptive operationId plus a clear summary, description, and tags.
+- Describe every path, query, and header parameter. Mark required parameters correctly.
+- Include requestBody descriptions, required fields, supported content types, and complete schemas.
+- Include actual response status codes, content types, and useful response schemas, not only generic object responses.
+- Define the API security scheme, but never put API keys, tokens, passwords, cookies, or other credential values in the file.
+- Preserve enums, formats, constraints, and safe example values where the code makes them clear.
+- Resolve or correctly define all $ref values and make sure the final YAML is valid OpenAPI.
+
+Before finishing, validate openapi.yaml with an OpenAPI validator and correct all structural or reference errors. Write the file at the project root, then briefly report which routes were included and anything that could not be documented confidently.`;
+}
+
+export function smitheryPublishReadiness({
+  publicMcpUrl,
+  smitheryForm,
+  releaseTools,
+  busy,
+}: {
+  publicMcpUrl: string;
+  smitheryForm: SmitheryPublishForm;
+  releaseTools: SmitheryPublishTool[];
+  busy: boolean;
+}) {
+  const hasPublicHttpsUrl = publicMcpUrl.startsWith("https://");
+  const hasSmitheryNamespace = smitheryForm.namespace.trim().length > 0;
+  const hasSmitheryApiKey = smitheryForm.smithery_api_key.trim().length > 0;
+  const hasSmitheryServerName = smitheryForm.server_name.trim().length > 0;
+  const hasServerDisplayName = smitheryForm.display_name.trim().length > 0;
+  const hasServerDescription = smitheryForm.description.trim().length > 0;
+  const hasServerHomepage = smitheryForm.homepage.trim().length > 0;
+  const hasServerIcon = smitheryForm.icon_url.trim().length > 0;
+  const hasServerMetadata = hasServerDisplayName && hasServerDescription && hasServerHomepage && hasServerIcon;
+  const hasReleaseTools = releaseTools.length > 0;
+  const hasActionTools = releaseTools.some((tool) => tool.kind === "action");
+  const hasApiTools = releaseTools.some((tool) => tool.kind !== "action");
+  const hasToolDescriptions = releaseTools.length > 0 && releaseTools.every((tool) => tool.description.trim().length >= 20);
+  const hasOutputSchemas = releaseTools.length > 0 && releaseTools.every((tool) => Boolean(tool.output_schema));
+  const hasAnnotations = releaseTools.length > 0 && releaseTools.every((tool) => Boolean(tool.annotations && Object.keys(tool.annotations).length));
+  const hasGoodNaming = releaseTools.length > 0 && releaseTools.every((tool) => /^[a-z][a-z0-9_]{2,63}$/.test(tool.name));
+  const canPublishToSmithery = !busy && hasPublicHttpsUrl && hasSmitheryNamespace && hasSmitheryServerName && hasSmitheryApiKey && hasServerMetadata && hasReleaseTools;
+  return {
+    hasPublicHttpsUrl,
+    hasSmitheryNamespace,
+    hasSmitheryApiKey,
+    hasSmitheryServerName,
+    hasServerMetadata,
+    hasReleaseTools,
+    hasActionTools,
+    hasApiTools,
+    hasToolDescriptions,
+    hasOutputSchemas,
+    hasAnnotations,
+    hasGoodNaming,
+    canPublishToSmithery,
+  };
+}
+
 function InfoTip({ id, text }: { id: string; text: string }) {
   return (
     <span className="t-tt-wrap">
@@ -103,14 +182,16 @@ function InfoTip({ id, text }: { id: string; text: string }) {
 }
 
 export function App() {
-  const [projects, setProjects] = useState<Project[]>([]);
   const [project, setProject] = useState<Project | null>(null);
-  const [operations, setOperations] = useState<Operation[]>([]);
-  const [selected, setSelected] = useState<string[]>([]);
+  const [workspace, setWorkspace] = useState<Workspace | null>(null);
+  const [selectedToolsetIds, setSelectedToolsetIds] = useState<string[]>([]);
+  const [toolsetsNeedReview, setToolsetsNeedReview] = useState(false);
   const [release, setRelease] = useState<Release | null>(null);
   const [activeStep, setActiveStep] = useState<StepId>("setup");
   const [message, setMessage] = useState("Ready. Add the product API details to generate an MCP.");
-  const [busy, setBusy] = useState(false);
+  const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [selectedOpenapiFile, setSelectedOpenapiFile] = useState<File | null>(null);
+  const [openapiPromptCopied, setOpenapiPromptCopied] = useState(false);
   const [toolArgs, setToolArgs] = useState<Record<string, string>>({});
   const [toolResults, setToolResults] = useState<Record<string, string>>({});
   const [smitheryResult, setSmitheryResult] = useState<SmitheryPublishResponse | null>(null);
@@ -125,31 +206,48 @@ export function App() {
   const [smitheryForm, setSmitheryForm] = useState({
     namespace: "",
     server_name: "demo-store-mcp",
+    display_name: "Demo Store MCP",
+    description: "Focused MCP actions for the Demo Store product API.",
+    homepage: "",
+    icon_url: "",
+    repository_url: "",
+    license: "",
     smithery_api_key: "",
   });
 
   const tabRefs = useRef<Record<StepId, HTMLButtonElement | null>>({ setup: null, openapi: null, tools: null, release: null });
   const pillRef = useRef<HTMLSpanElement | null>(null);
 
-  useEffect(() => { api.projects().then((value) => setProjects(value.projects)).catch((error) => setMessage(error.message)); }, []);
-
   const currentAuth = useMemo(() => authOptions.find((item) => item.value === form.auth_type) || authOptions[0], [form.auth_type]);
+  const operations = workspace?.operations || [];
   const completedSteps = [Boolean(project), operations.length > 0, Boolean(release)].filter(Boolean).length;
-  const supportedCount = operations.filter((item) => item.supported).length;
-  const writeCount = operations.filter((item) => item.supported && !["GET", "HEAD"].includes(item.method)).length;
   const activeHelpOption = authOptions.find((item) => item.value === activeHelp) || currentAuth;
   const localMcpUrl = release ? `${window.location.origin}/mcp/${release.deployment_slug}/mcp` : "";
   const publicMcpUrl = release?.mcp_url || localMcpUrl;
-  const hasPublicHttpsUrl = publicMcpUrl.startsWith("https://");
-  const hasSmitheryNamespace = smitheryForm.namespace.trim().length > 0;
-  const hasSmitheryApiKey = smitheryForm.smithery_api_key.trim().length > 0;
   const qualifiedSmitheryName = `${smitheryForm.namespace || "@namespace"}/${smitheryForm.server_name || "server-name"}`.replace(/\/+/g, "/");
   const hasToolResults = Object.keys(toolResults).length > 0;
+  const busy = busyAction !== null;
+  const openapiPrompt = openapiGenerationPrompt();
+  const releaseTools = release?.tools || [];
+  const {
+    hasPublicHttpsUrl,
+    hasSmitheryNamespace,
+    hasSmitheryApiKey,
+    hasServerMetadata,
+    hasReleaseTools,
+    hasActionTools,
+    hasApiTools,
+    hasToolDescriptions,
+    hasOutputSchemas,
+    hasAnnotations,
+    hasGoodNaming,
+    canPublishToSmithery,
+  } = smitheryPublishReadiness({ publicMcpUrl, smitheryForm, releaseTools, busy });
 
   const steps: Array<{ id: StepId; label: string; detail: string; enabled: boolean; complete: boolean }> = [
     { id: "setup", label: "Product details", detail: "Base URL and auth", enabled: true, complete: Boolean(project) },
     { id: "openapi", label: "OpenAPI import", detail: "Upload API schema", enabled: Boolean(project), complete: operations.length > 0 },
-    { id: "tools", label: "Tool approval", detail: "Select MCP tools", enabled: operations.length > 0, complete: Boolean(release) },
+    { id: "tools", label: "Action Studio", detail: "Design agent tools", enabled: operations.length > 0, complete: Boolean(release) },
     { id: "release", label: "MCP testing", detail: "Call generated tools", enabled: Boolean(release), complete: false },
   ];
 
@@ -190,54 +288,97 @@ export function App() {
   };
 
   async function create() {
-    setBusy(true); setMessage("Creating project...");
+    setBusyAction("create-project"); setMessage("Creating project...");
     try {
       const value = await api.createProject(form);
       setProject(value);
-      setProjects((items) => [value, ...items]);
-      setOperations([]);
+      setWorkspace(null);
+      setSelectedToolsetIds([]);
+      setToolsetsNeedReview(false);
       setRelease(null);
+      setSelectedOpenapiFile(null);
       setToolArgs({});
       setToolResults({});
       setSmitheryResult(null);
-      setSmitheryForm((current) => ({ ...current, server_name: `${serverSlug(value.name)}-mcp` }));
+      setSmitheryForm((current) => ({
+        ...current,
+        server_name: `${serverSlug(value.name)}-mcp`,
+        display_name: `${value.name} MCP`,
+        description: `Focused MCP actions for the ${value.name} product API.`,
+      }));
       setActiveStep("openapi");
       setMessage("Project created. Upload the OpenAPI document next.");
     }
-    catch (error) { setMessage(error instanceof Error ? error.message : "Could not create project."); } finally { setBusy(false); }
+    catch (error) { setMessage(error instanceof Error ? error.message : "Could not create project."); } finally { setBusyAction(null); }
   }
 
-  async function upload(file: File) {
-    if (!project) return; setBusy(true); setMessage("Reading OpenAPI and discovering operations...");
+  async function upload() {
+    if (!project || !selectedOpenapiFile) return;
+    setBusyAction("upload-openapi"); setMessage("Reading OpenAPI and discovering operations...");
     try {
-      const value = await api.uploadOpenapi(project.project_id, file);
-      setOperations(value.operations);
-      setSelected(value.operations.filter((item) => item.supported).map((item) => item.operation_id));
+      const value = await api.uploadOpenapi(project.project_id, selectedOpenapiFile);
+      const nextWorkspace = await api.workspace(project.project_id);
+      if (workspace) {
+        const available = new Set(nextWorkspace.toolsets.map((item) => item.toolset_id));
+        setSelectedToolsetIds((current) => current.filter((id) => available.has(id)));
+        setToolsetsNeedReview(true);
+      } else {
+        setSelectedToolsetIds(nextWorkspace.toolsets.map((item) => item.toolset_id));
+        setToolsetsNeedReview(false);
+      }
+      setWorkspace(nextWorkspace);
       setRelease(null);
       setToolResults({});
       setSmitheryResult(null);
       setActiveStep("tools");
-      setMessage("Operations discovered. Review the generated tools before releasing.");
+      setMessage(`${value.operations.length} operations discovered. Choose toolsets and optional actions next.`);
     }
-    catch (error) { setMessage(error instanceof Error ? error.message : "Could not read OpenAPI."); } finally { setBusy(false); }
+    catch (error) { setMessage(error instanceof Error ? error.message : "Could not read OpenAPI."); } finally { setBusyAction(null); }
   }
 
-  async function makeRelease() {
-    if (!project) return; setBusy(true); setMessage("Saving selected operations and compiling MCP manifest...");
+  async function copyOpenapiPrompt() {
     try {
-      await api.select(project.project_id, selected);
-      const value = await api.release(project.project_id);
+      await navigator.clipboard.writeText(openapiPrompt);
+      setOpenapiPromptCopied(true);
+      setMessage("OpenAPI generation prompt copied. Paste it into your coding assistant inside the API project.");
+      window.setTimeout(() => setOpenapiPromptCopied(false), 2200);
+    } catch {
+      setMessage("Could not access the clipboard. Select the prompt text and copy it manually.");
+    }
+  }
+
+  async function makeRelease(profile: ToolProfile | null, toolMode: ReleaseMode, confirmLarge: boolean, selectedToolsetIds: string[]) {
+    if (profile && confirmLarge && !window.confirm(`This profile contains ${profile.action_ids.length} tools. Large tool lists can make agent selection less reliable. Generate it anyway?`)) return;
+    if (!project) return; setBusyAction(profile ? `release:${profile.profile_id}` : "release:api-only"); setMessage(profile ? `Compiling the ${profile.name} publishing profile...` : "Compiling an API-only MCP release...");
+    try {
+      const preview = await api.previewRelease(project.project_id, profile?.profile_id || null, toolMode, selectedToolsetIds, confirmLarge);
+      const value = await api.release(project.project_id, profile?.profile_id || null, toolMode, confirmLarge, selectedToolsetIds);
+      const expectedApiTools = preview.tool_counts.api;
+      const apiTools = value.tools.filter((tool) => tool.kind !== "action").length;
+      const actionTools = value.tools.filter((tool) => tool.kind === "action").length;
+      if (["api_and_actions", "api_only"].includes(toolMode) && apiTools !== expectedApiTools) {
+        throw new Error(`Release verification failed: expected ${expectedApiTools} API tools but received ${apiTools}. Restart the backend and generate a new release.`);
+      }
+      if (toolMode === "api_and_actions" && profile && actionTools !== profile.action_ids.length) {
+        throw new Error(`Release verification failed: expected ${profile.action_ids.length} actions but received ${actionTools}. Check the profile and generate a new release.`);
+      }
+      if (toolMode === "actions_only" && apiTools > 0) {
+        throw new Error("Release verification failed: actions-only release unexpectedly contains API tools.");
+      }
+      if (value.tools.length !== preview.tool_counts.total || value.tools.some((tool, index) => tool.name !== preview.tool_names[index])) {
+        throw new Error("Release verification failed: generated tools differ from the preview. Review the source and generate a new release.");
+      }
       setRelease(value);
       setToolArgs(Object.fromEntries(value.tools.map((tool) => [tool.name, defaultArguments(tool)])));
       setSmitheryResult(null);
       setActiveStep("release");
-      setMessage("MCP release created. Test any generated tool below.");
+      setMessage(`${profile?.name || "API-only"} MCP release created with ${value.tools.length} tool${value.tools.length === 1 ? "" : "s"}.`);
     }
-    catch (error) { setMessage(error instanceof Error ? error.message : "Could not create release."); } finally { setBusy(false); }
+    catch (error) { setMessage(error instanceof Error ? error.message : "Could not create release."); } finally { setBusyAction(null); }
   }
 
   async function testTool(tool: string) {
-    if (!release) return; setBusy(true); setMessage(`Calling ${tool}...`);
+    if (!release) return; setBusyAction(`test-tool:${tool}`); setMessage(`Calling ${tool}...`);
     try {
       const args = JSON.parse(toolArgs[tool] || "{}");
       const value = await api.test(release.release_id, tool, args);
@@ -245,7 +386,7 @@ export function App() {
       setToolResults((current) => ({ ...current, [tool]: result }));
       setMessage(`${tool} finished.`);
     }
-    catch (error) { setMessage(error instanceof Error ? error.message : "Tool call failed."); } finally { setBusy(false); }
+    catch (error) { setMessage(error instanceof Error ? error.message : "Tool call failed."); } finally { setBusyAction(null); }
   }
 
   function clearToolResult(tool: string) {
@@ -264,15 +405,20 @@ export function App() {
 
   async function publishToSmithery() {
     if (!release) return;
-    setBusy(true);
+    setBusyAction("publish-smithery");
     setMessage("Submitting the public MCP endpoint to Smithery...");
     try {
-      const value = await api.publish(release.release_id, smitheryForm);
+      const value = await api.publish(release.release_id, {
+        ...smitheryForm,
+        repository_url: smitheryForm.repository_url.trim() || undefined,
+        license: smitheryForm.license.trim() || undefined,
+        unlisted: false,
+      });
       setSmitheryResult(value);
       setSmitheryForm((current) => ({ ...current, smithery_api_key: "" }));
       setMessage("Smithery publish request accepted. Review the deployment status below.");
     }
-    catch (error) { setMessage(error instanceof Error ? error.message : "Could not publish to Smithery."); } finally { setBusy(false); }
+    catch (error) { setMessage(error instanceof Error ? error.message : "Could not publish to Smithery."); } finally { setBusyAction(null); }
   }
 
   return (
@@ -281,7 +427,7 @@ export function App() {
         <div>
           <div className="eyebrow">PRODUCT-TO-MCP - DEPLOYMENT PREP</div>
           <h1>Generate a customer-ready MCP from a product API.</h1>
-          <p>Move step by step: connect the API, upload OpenAPI, approve tools, then test the generated MCP release.</p>
+          <p>Connect the API, organize operations, build deterministic actions, then publish a focused MCP profile.</p>
         </div>
         <aside className="status-card">
           <span className="status-label">Prototype status</span>
@@ -387,7 +533,9 @@ export function App() {
             {form.auth_type === "none" && <p className="notice">No-auth mode is best for the local demo API. For customer APIs, use Bearer token or API key header.</p>}
 
             <div className="step-actions">
-              <button className="primary-action" onClick={create} disabled={busy}>Create project and continue</button>
+              <button className={`primary-action ${busyAction === "create-project" ? "loading-button" : ""}`} onClick={create} disabled={busy}>
+                {busyAction === "create-project" ? "Creating project..." : "Create project and continue"}
+              </button>
             </div>
           </article>
         )}
@@ -398,17 +546,75 @@ export function App() {
               <span>2</span>
               <div>
                 <h2>OpenAPI definition</h2>
-                <p>Upload the product API contract. The backend reads operations and turns them into MCP tool candidates.</p>
+                <p>Upload one OpenAPI file that describes the API endpoints you want available as MCP tools.</p>
               </div>
             </div>
 
             {project ? (
-              <div className="upload-box">
-                <span className="status-label">Connected project</span>
-                <strong>{project.name}</strong>
-                <small>{project.base_url}</small>
-                <input type="file" accept=".json,.yaml,.yml,application/json,text/yaml" onChange={(event) => event.target.files?.[0] && upload(event.target.files[0])} />
-                <p className="notice">For demo testing, upload <code>examples/demo-openapi.yaml</code>.</p>
+              <div className="openapi-onboarding">
+                <div className="upload-box openapi-upload-box">
+                  <div className="upload-heading">
+                    <div>
+                      <span className="status-label">Connected project</span>
+                      <strong>{project.name}</strong>
+                      <small>{project.base_url}</small>
+                    </div>
+                    <span className="file-format">OpenAPI 3.x / JSON or YAML</span>
+                  </div>
+                  <label className="file-picker">
+                    <span>Choose your API definition</span>
+                    <input
+                      type="file"
+                      accept=".json,.yaml,.yml,application/json,text/yaml"
+                      onChange={(event) => setSelectedOpenapiFile(event.target.files?.[0] || null)}
+                    />
+                  </label>
+                  {selectedOpenapiFile ? (
+                    <p className="selected-file"><strong>Ready to import:</strong> {selectedOpenapiFile.name}</p>
+                  ) : (
+                    <small>Upload the full API contract, not an API response, Postman screenshot, or source-code file.</small>
+                  )}
+                  <p className="notice">For demo testing, choose <code>examples/demo-openapi.yaml</code>. The file is only imported after you click Next.</p>
+                </div>
+
+                <section className="openapi-guide" aria-labelledby="openapi-upload-requirements">
+                  <div className="guide-heading">
+                    <div>
+                      <span className="status-label">What to upload</span>
+                      <h3 id="openapi-upload-requirements">Your API's OpenAPI or Swagger definition</h3>
+                    </div>
+                    <small>Do not include API keys, tokens, passwords, or cookies.</small>
+                  </div>
+                  <div className="openapi-requirements">
+                    <div><strong>Format</strong><span><code>.yaml</code>, <code>.yml</code>, or <code>.json</code></span></div>
+                    <div><strong>Version</strong><span>OpenAPI 3.0 or 3.1</span></div>
+                    <div><strong>Contents</strong><span>Paths, methods, parameters, bodies, and responses</span></div>
+                  </div>
+                </section>
+
+                <details className="openapi-help" open>
+                  <summary>Where can I find this file?</summary>
+                  <p>Try these common documentation URLs while your API is running. Projects can configure a different path.</p>
+                  <div className="openapi-source-list">
+                    <div><strong>FastAPI</strong><code>/openapi.json</code></div>
+                    <div><strong>Spring Boot + springdoc</strong><code>/v3/api-docs</code></div>
+                    <div><strong>.NET + Swashbuckle</strong><code>/swagger/v1/swagger.json</code></div>
+                    <div><strong>NestJS / Express Swagger</strong><span>Check the configured docs JSON URL, often <code>/api-json</code> or <code>/swagger.json</code>.</span></div>
+                    <div><strong>Hosted API docs</strong><span>Look for Download OpenAPI, Export Swagger, or API definition.</span></div>
+                  </div>
+                </details>
+
+                <details className="openapi-help prompt-help">
+                  <summary>I do not have an OpenAPI file</summary>
+                  <p>Open any backend project in a coding assistant and paste this generic prompt. It works across languages and frameworks and asks the assistant to inspect the real code instead of guessing.</p>
+                  <textarea className="openapi-prompt" value={openapiPrompt} readOnly aria-label="Prompt for generating an OpenAPI file" />
+                  <div className="prompt-actions">
+                    <button className="ghost-action" type="button" onClick={() => void copyOpenapiPrompt()}>
+                      {openapiPromptCopied ? "Prompt copied" : "Copy generation prompt"}
+                    </button>
+                    <small>Review the generated file before uploading it. Remove internal-only endpoints and all credential values.</small>
+                  </div>
+                </details>
               </div>
             ) : (
               <div className="empty-state">
@@ -419,6 +625,16 @@ export function App() {
 
             <div className="step-actions">
               <button className="secondary" type="button" onClick={() => setActiveStep("setup")}>Back</button>
+              {project && (
+                <button
+                  className={`primary-action ${busyAction === "upload-openapi" ? "loading-button" : ""}`}
+                  type="button"
+                  onClick={() => void upload()}
+                  disabled={busy || !selectedOpenapiFile}
+                >
+                  {busyAction === "upload-openapi" ? "Importing OpenAPI..." : "Next: discover operations"}
+                </button>
+              )}
             </div>
           </article>
         )}
@@ -429,41 +645,22 @@ export function App() {
               <div className="section-title compact">
                 <span>3</span>
                 <div>
-                  <h2>Review generated tools</h2>
-                  <p>Only selected operations will be included in the generated MCP release.</p>
+                  <h2>Design agent actions</h2>
+                  <p>Choose the API toolsets the agent receives, and optionally add approved actions or chains.</p>
                 </div>
               </div>
-              <div className="metrics">
-                <span>{supportedCount} supported</span>
-                <span>{writeCount} write tools</span>
-                <span>{selected.length} selected</span>
-              </div>
+              {workspace && <div className="metrics"><span>{workspace.toolsets.length} toolsets</span><span>{workspace.actions.length} actions</span><span>{workspace.profiles.length} profiles</span></div>}
             </div>
 
-            {operations.length > 0 ? (
-              <div className="operation-list">
-                {operations.map((operation) => (
-                  <label className={`operation ${!operation.supported ? "disabled" : ""}`} key={operation.operation_id}>
-                    <input type="checkbox" disabled={!operation.supported} checked={selected.includes(operation.operation_id)} onChange={() => setSelected((items) => items.includes(operation.operation_id) ? items.filter((item) => item !== operation.operation_id) : [...items, operation.operation_id])} />
-                    <span className={`method-pill ${operationTone(operation.method)}`}>{operation.method}</span>
-                    <span>
-                      <strong>{operation.tool_name}</strong>
-                      <small>{operation.path} - {operation.description}</small>
-                      {!operation.supported && <small className="warning">{operation.reason}</small>}
-                    </span>
-                  </label>
-                ))}
-              </div>
-            ) : (
+            {workspace && project ? <ActionStudio projectId={project.project_id} workspace={workspace} selectedToolsetIds={selectedToolsetIds} onSelectedToolsetIds={setSelectedToolsetIds} toolsetsNeedReview={toolsetsNeedReview} onToolsetsReviewed={() => setToolsetsNeedReview(false)} onWorkspace={setWorkspace} onRelease={makeRelease} onMessage={setMessage} /> : (
               <div className="empty-state">
                 <strong>Upload OpenAPI first</strong>
-                <p>Tool approval unlocks after operation discovery finishes.</p>
+                <p>The Action Studio unlocks after operation discovery finishes.</p>
               </div>
             )}
 
             <div className="step-actions">
               <button className="secondary" type="button" onClick={() => setActiveStep("openapi")}>Back</button>
-              <button className="primary-action" onClick={makeRelease} disabled={busy || selected.length === 0}>Generate MCP release</button>
             </div>
           </article>
         )}
@@ -496,6 +693,13 @@ export function App() {
                     <code>{release.release_id}</code>
                     <small>Manifest {release.manifest_hash.slice(0, 16)}</small>
                   </div>
+                </div>
+
+                <div className="release-tool-summary" aria-label="Generated release contents">
+                  <strong>Generated contents</strong>
+                  <span>{release.tools.filter((tool) => tool.kind !== "action").length} API tools</span>
+                  <span>{release.tools.filter((tool) => tool.kind === "action").length} action tools</span>
+                  <span>{release.tools.length} total</span>
                 </div>
 
                 <div className="smithery-card">
@@ -544,6 +748,63 @@ export function App() {
                     </div>
                   </div>
 
+                  <div className="requirement-panel quality-panel">
+                    <div className="requirement-panel-title">
+                      <span>Publish quality checklist</span>
+                    </div>
+                    <div className="smithery-checklist quality-checklist" aria-label="Smithery quality checklist">
+                      <div className={`requirement-item ${hasReleaseTools ? "ready" : "blocked"}`}>
+                        <span className="requirement-icon">{hasReleaseTools ? "✓" : "○"}</span>
+                        <div>
+                          <strong>Tool selection</strong>
+                          <small>{hasReleaseTools ? `${hasApiTools ? "API tools" : ""}${hasApiTools && hasActionTools ? " + " : ""}${hasActionTools ? "actions" : ""} ready` : "Create an MCP release"}</small>
+                        </div>
+                      </div>
+                      <div className={`requirement-item ${hasToolDescriptions ? "ready" : "blocked"}`}>
+                        <span className="requirement-icon">{hasToolDescriptions ? "✓" : "○"}</span>
+                        <div>
+                          <strong>Descriptions</strong>
+                          <small>{hasToolDescriptions ? "Clear tool descriptions included" : "Actions need clear descriptions"}</small>
+                        </div>
+                      </div>
+                      <div className={`requirement-item ${hasOutputSchemas ? "ready" : "blocked"}`}>
+                        <span className="requirement-icon">{hasOutputSchemas ? "✓" : "○"}</span>
+                        <div>
+                          <strong>Output schemas</strong>
+                          <small>{hasOutputSchemas ? "Returned in tools/list" : "Release needs action outputs"}</small>
+                        </div>
+                      </div>
+                      <div className={`requirement-item ${hasAnnotations ? "ready" : "blocked"}`}>
+                        <span className="requirement-icon">{hasAnnotations ? "✓" : "○"}</span>
+                        <div>
+                          <strong>Annotations</strong>
+                          <small>{hasAnnotations ? "Read/write hints included" : "Action annotations missing"}</small>
+                        </div>
+                      </div>
+                      <div className={`requirement-item ${hasGoodNaming ? "ready" : "blocked"}`}>
+                        <span className="requirement-icon">{hasGoodNaming ? "✓" : "○"}</span>
+                        <div>
+                          <strong>Naming</strong>
+                          <small>{hasGoodNaming ? "Snake case tool names" : "Use simple snake_case names"}</small>
+                        </div>
+                      </div>
+                      <div className={`requirement-item ${hasServerMetadata ? "ready" : "blocked"}`}>
+                        <span className="requirement-icon">{hasServerMetadata ? "✓" : "○"}</span>
+                        <div>
+                          <strong>Server metadata</strong>
+                          <small>{hasServerMetadata ? "Description, homepage, and icon ready" : "Add server description, homepage, and icon"}</small>
+                        </div>
+                      </div>
+                      <div className="requirement-item ready">
+                        <span className="requirement-icon">✓</span>
+                        <div>
+                          <strong>Config schema</strong>
+                          <small>Empty schema sent with release</small>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
                   {!hasPublicHttpsUrl && (
                     <p className="notice warning-notice">Deployment is not ready for Smithery yet because the public MCP URL is not HTTPS. After deploying the backend, set <code>PRODUCT_TO_MCP_PUBLIC_BASE_URL=https://your-backend-domain.com</code>.</p>
                   )}
@@ -561,12 +822,36 @@ export function App() {
                       <span className="label-row">Smithery API key <InfoTip id="smithery-key-help" text="The customer generates this in Smithery. The prototype sends it once to publish and then clears this field." /></span>
                       <input type="password" value={smitheryForm.smithery_api_key} onChange={(event) => updateSmithery("smithery_api_key", event.target.value)} placeholder="smithery API key" />
                     </label>
+                    <label>
+                      <span className="label-row">Display name <InfoTip id="display-name-help" text="Shown on the Smithery server card." /></span>
+                      <input value={smitheryForm.display_name} onChange={(event) => updateSmithery("display_name", event.target.value)} placeholder="Demo Store MCP" />
+                    </label>
+                    <label className="wide-field">
+                      <span className="label-row">Server description <InfoTip id="server-description-help" text="A concise server card description. Make it specific to the customer API and the approved actions." /></span>
+                      <textarea value={smitheryForm.description} onChange={(event) => updateSmithery("description", event.target.value)} placeholder="Focused MCP actions for the customer product API." />
+                    </label>
+                    <label>
+                      <span className="label-row">Homepage URL <InfoTip id="homepage-help" text="Public product, docs, or project page for this MCP server." /></span>
+                      <input value={smitheryForm.homepage} onChange={(event) => updateSmithery("homepage", event.target.value)} placeholder="https://example.com" />
+                    </label>
+                    <label>
+                      <span className="label-row">Icon URL <InfoTip id="icon-url-help" text="Public HTTPS image URL for the Smithery server icon." /></span>
+                      <input value={smitheryForm.icon_url} onChange={(event) => updateSmithery("icon_url", event.target.value)} placeholder="https://example.com/icon.png" />
+                    </label>
+                    <label>
+                      <span className="label-row">Repository URL</span>
+                      <input value={smitheryForm.repository_url} onChange={(event) => updateSmithery("repository_url", event.target.value)} placeholder="https://github.com/org/repo" />
+                    </label>
+                    <label>
+                      <span className="label-row">License</span>
+                      <input value={smitheryForm.license} onChange={(event) => updateSmithery("license", event.target.value)} placeholder="MIT" />
+                    </label>
                   </div>
 
                   <div className="publish-row">
                     <p>Qualified Smithery name: <code>{qualifiedSmitheryName}</code></p>
-                    <button className="primary-action" type="button" onClick={publishToSmithery} disabled={busy || !hasPublicHttpsUrl || !hasSmitheryNamespace || !smitheryForm.server_name.trim() || !hasSmitheryApiKey}>
-                      Publish to Smithery
+                    <button className={`primary-action ${busyAction === "publish-smithery" ? "loading-button" : ""}`} type="button" onClick={publishToSmithery} disabled={!canPublishToSmithery}>
+                      {busyAction === "publish-smithery" ? "Publishing..." : "Publish to Smithery"}
                     </button>
                   </div>
 
@@ -598,14 +883,16 @@ export function App() {
                     <div className="tool-test" key={tool.name}>
                       <div className="tool-test-header">
                         <div>
-                          <strong>{tool.name}</strong>
-                          <small>{tool.method} {tool.path}</small>
+                          <strong>{tool.title || tool.name}</strong>
+                          <small>{tool.kind === "action" ? `${tool.name} · ${tool.steps?.length || 1} API step${tool.steps?.length === 1 ? "" : "s"}` : `${tool.method} ${tool.path}`}</small>
                         </div>
-                        <span className={`method-pill ${operationTone(tool.method)}`}>{tool.method}</span>
+                        <span className={`method-pill ${tool.kind === "action" ? "action" : operationTone(tool.method || "")}`}>{tool.kind === "action" ? "ACTION" : tool.method}</span>
                       </div>
                       <textarea value={toolArgs[tool.name] || "{}"} onChange={(event) => setToolArgs((current) => ({ ...current, [tool.name]: event.target.value }))} />
                       <div className="tool-action-row">
-                        <button className="secondary" onClick={() => testTool(tool.name)} disabled={busy}>Test tool</button>
+                        <button className={`secondary ${busyAction === `test-tool:${tool.name}` ? "loading-button" : ""}`} onClick={() => testTool(tool.name)} disabled={busy}>
+                          {busyAction === `test-tool:${tool.name}` ? "Testing..." : "Test tool"}
+                        </button>
                         <button className="ghost-action" type="button" onClick={() => clearToolResult(tool.name)} disabled={!toolResults[tool.name]}>Clear result</button>
                       </div>
                       {toolResults[tool.name] && <pre>{toolResults[tool.name]}</pre>}
@@ -627,7 +914,6 @@ export function App() {
         )}
       </section>
 
-      {/* <footer>{projects.length} project{projects.length === 1 ? "" : "s"} in local prototype storage.</footer> */}
     </main>
   );
 }

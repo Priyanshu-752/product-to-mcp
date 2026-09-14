@@ -7,7 +7,10 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from product_to_mcp.domain.models import Operation, Project, Release, ToolManifest, now
+from product_to_mcp.domain.models import (
+    ActionDefinition, ActionToolManifest, Operation, OperationGroup, Project,
+    Release, ToolManifest, ToolProfile, now,
+)
 
 
 class SQLiteStore:
@@ -55,13 +58,85 @@ class SQLiteStore:
                     updated_at TEXT NOT NULL,
                     FOREIGN KEY(project_id) REFERENCES projects(project_id)
                 );
+                CREATE TABLE IF NOT EXISTS schema_migrations (
+                    version INTEGER PRIMARY KEY,
+                    applied_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS operation_groups (
+                    group_id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    sort_order INTEGER NOT NULL,
+                    hidden INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(project_id, name),
+                    FOREIGN KEY(project_id) REFERENCES projects(project_id)
+                );
+                CREATE TABLE IF NOT EXISTS operation_group_members (
+                    project_id TEXT NOT NULL,
+                    operation_id TEXT NOT NULL,
+                    group_id TEXT NOT NULL,
+                    sort_order INTEGER NOT NULL,
+                    PRIMARY KEY(project_id, operation_id),
+                    FOREIGN KEY(group_id) REFERENCES operation_groups(group_id)
+                );
+                CREATE TABLE IF NOT EXISTS actions (
+                    action_id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    spec_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(project_id, name),
+                    FOREIGN KEY(project_id) REFERENCES projects(project_id)
+                );
+                CREATE TABLE IF NOT EXISTS tool_profiles (
+                    profile_id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    spec_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(project_id, name),
+                    FOREIGN KEY(project_id) REFERENCES projects(project_id)
+                );
+                CREATE TABLE IF NOT EXISTS custom_toolsets (
+                    toolset_id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    operation_ids_json TEXT NOT NULL,
+                    UNIQUE(project_id, name),
+                    FOREIGN KEY(project_id) REFERENCES projects(project_id)
+                );
                 """
             )
+            columns = {row[1] for row in db.execute("PRAGMA table_info(releases)").fetchall()}
+            if "profile_id" not in columns:
+                db.execute("ALTER TABLE releases ADD COLUMN profile_id TEXT")
+            db.execute("INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(1,?)", (now().isoformat(),))
 
     def health_check(self) -> None:
         with self._connect() as db:
             db.execute("SELECT 1").fetchone()
             db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='projects'").fetchone()
+
+    def list_custom_toolsets(self, project_id: str) -> tuple[dict[str, Any], ...]:
+        with self._connect() as db:
+            rows = db.execute("SELECT * FROM custom_toolsets WHERE project_id=? ORDER BY name", (project_id,)).fetchall()
+        return tuple({"toolset_id": row["toolset_id"], "name": row["name"], "operation_ids": json.loads(row["operation_ids_json"])} for row in rows)
+
+    def save_custom_toolset(self, project_id: str, toolset_id: str, name: str, operation_ids: tuple[str, ...]) -> None:
+        with self._connect() as db:
+            db.execute("INSERT INTO custom_toolsets(toolset_id,project_id,name,operation_ids_json) VALUES(?,?,?,?) "
+                       "ON CONFLICT(toolset_id) DO UPDATE SET name=excluded.name,operation_ids_json=excluded.operation_ids_json",
+                       (toolset_id, project_id, name, json.dumps(operation_ids)))
+
+    def delete_custom_toolset(self, project_id: str, toolset_id: str) -> None:
+        with self._connect() as db:
+            cursor = db.execute("DELETE FROM custom_toolsets WHERE project_id=? AND toolset_id=?", (project_id, toolset_id))
+            if not cursor.rowcount:
+                raise KeyError(toolset_id)
 
     def create_project(self, name: str, base_url: str, auth_type: str, api_key_header: str) -> Project:
         project = Project(
@@ -100,6 +175,121 @@ class SQLiteStore:
                 (project_id, json.dumps(source), json.dumps([item.model_dump(mode="json") for item in operations]), json.dumps(list(selected))),
             )
 
+    def sync_groups(self, project_id: str, operations: tuple[Operation, ...]) -> tuple[OperationGroup, ...]:
+        with self._connect() as db:
+            memberships = {row["operation_id"]: row["group_id"] for row in db.execute("SELECT operation_id,group_id FROM operation_group_members WHERE project_id=?", (project_id,)).fetchall()}
+            groups = {row["name"].casefold(): row["group_id"] for row in db.execute("SELECT group_id,name FROM operation_groups WHERE project_id=?", (project_id,)).fetchall()}
+            current_ids = {item.operation_id for item in operations if item.supported}
+            for operation_id in set(memberships) - current_ids:
+                db.execute("DELETE FROM operation_group_members WHERE project_id=? AND operation_id=?", (project_id, operation_id))
+            for order, operation in enumerate(operations):
+                if not operation.supported:
+                    continue
+                if operation.operation_id in memberships:
+                    continue
+                group_name = operation.default_group or "General"
+                group_id = groups.get(group_name.casefold())
+                if group_id is None:
+                    group_id = f"grp_{secrets.token_urlsafe(8)}"
+                    stamp = now().isoformat()
+                    db.execute("INSERT INTO operation_groups VALUES(?,?,?,?,?,?,?)", (group_id, project_id, group_name, len(groups), 0, stamp, stamp))
+                    groups[group_name.casefold()] = group_id
+                db.execute("INSERT INTO operation_group_members VALUES(?,?,?,?)", (project_id, operation.operation_id, group_id, order))
+        return self.list_groups(project_id)
+
+    def list_groups(self, project_id: str) -> tuple[OperationGroup, ...]:
+        with self._connect() as db:
+            rows = db.execute("SELECT * FROM operation_groups WHERE project_id=? ORDER BY sort_order,name", (project_id,)).fetchall()
+            members = db.execute("SELECT group_id,operation_id FROM operation_group_members WHERE project_id=? ORDER BY sort_order", (project_id,)).fetchall()
+        by_group: dict[str, list[str]] = {}
+        for row in members:
+            by_group.setdefault(row["group_id"], []).append(row["operation_id"])
+        return tuple(OperationGroup(
+            group_id=row["group_id"], project_id=row["project_id"], name=row["name"],
+            sort_order=row["sort_order"], hidden=bool(row["hidden"]),
+            operation_ids=tuple(by_group.get(row["group_id"], [])), created_at=row["created_at"], updated_at=row["updated_at"],
+        ) for row in rows)
+
+    def replace_groups(self, project_id: str, groups: tuple[OperationGroup, ...]) -> tuple[OperationGroup, ...]:
+        with self._connect() as db:
+            db.execute("DELETE FROM operation_group_members WHERE project_id=?", (project_id,))
+            incoming = {item.group_id for item in groups}
+            for item in groups:
+                db.execute(
+                    "INSERT INTO operation_groups(group_id,project_id,name,sort_order,hidden,created_at,updated_at) VALUES(?,?,?,?,?,?,?) "
+                    "ON CONFLICT(group_id) DO UPDATE SET name=excluded.name,sort_order=excluded.sort_order,hidden=excluded.hidden,updated_at=excluded.updated_at",
+                    (item.group_id, project_id, item.name, item.sort_order, int(item.hidden), item.created_at.isoformat(), now().isoformat()),
+                )
+                for order, operation_id in enumerate(item.operation_ids):
+                    db.execute("INSERT INTO operation_group_members VALUES(?,?,?,?)", (project_id, operation_id, item.group_id, order))
+            if incoming:
+                placeholders = ",".join("?" for _ in incoming)
+                db.execute(f"DELETE FROM operation_groups WHERE project_id=? AND group_id NOT IN ({placeholders})", (project_id, *incoming))
+            else:
+                db.execute("DELETE FROM operation_groups WHERE project_id=?", (project_id,))
+        return self.list_groups(project_id)
+
+    def list_actions(self, project_id: str) -> tuple[ActionDefinition, ...]:
+        with self._connect() as db:
+            rows = db.execute("SELECT spec_json FROM actions WHERE project_id=? ORDER BY created_at", (project_id,)).fetchall()
+        return tuple(ActionDefinition.model_validate(json.loads(row["spec_json"])) for row in rows)
+
+    def action(self, action_id: str) -> ActionDefinition:
+        with self._connect() as db:
+            row = db.execute("SELECT spec_json FROM actions WHERE action_id=?", (action_id,)).fetchone()
+        if row is None:
+            raise KeyError("action_not_found")
+        return ActionDefinition.model_validate(json.loads(row["spec_json"]))
+
+    def save_action(self, action: ActionDefinition) -> ActionDefinition:
+        with self._connect() as db:
+            db.execute(
+                "INSERT INTO actions(action_id,project_id,name,spec_json,created_at,updated_at) VALUES(?,?,?,?,?,?) "
+                "ON CONFLICT(action_id) DO UPDATE SET name=excluded.name,spec_json=excluded.spec_json,updated_at=excluded.updated_at",
+                (action.action_id, action.project_id, action.name, action.model_dump_json(by_alias=True), action.created_at.isoformat(), action.updated_at.isoformat()),
+            )
+        return action
+
+    def delete_action(self, action_id: str) -> None:
+        with self._connect() as db:
+            if db.execute("DELETE FROM actions WHERE action_id=?", (action_id,)).rowcount == 0:
+                raise KeyError("action_not_found")
+
+    def invalidate_actions(self, project_id: str, operation_ids: set[str]) -> tuple[str, ...]:
+        invalidated: list[str] = []
+        for action in self.list_actions(project_id):
+            if action.status != "draft" and any(step.operation_id in operation_ids for step in action.steps):
+                updated = action.model_copy(update={"status": "draft", "updated_at": now()})
+                self.save_action(updated)
+                invalidated.append(action.action_id)
+        return tuple(invalidated)
+
+    def list_profiles(self, project_id: str) -> tuple[ToolProfile, ...]:
+        with self._connect() as db:
+            rows = db.execute("SELECT spec_json FROM tool_profiles WHERE project_id=? ORDER BY created_at", (project_id,)).fetchall()
+        return tuple(ToolProfile.model_validate(json.loads(row["spec_json"])) for row in rows)
+
+    def profile(self, profile_id: str) -> ToolProfile:
+        with self._connect() as db:
+            row = db.execute("SELECT spec_json FROM tool_profiles WHERE profile_id=?", (profile_id,)).fetchone()
+        if row is None:
+            raise KeyError("profile_not_found")
+        return ToolProfile.model_validate(json.loads(row["spec_json"]))
+
+    def save_profile(self, profile: ToolProfile) -> ToolProfile:
+        with self._connect() as db:
+            db.execute(
+                "INSERT INTO tool_profiles(profile_id,project_id,name,spec_json,created_at,updated_at) VALUES(?,?,?,?,?,?) "
+                "ON CONFLICT(profile_id) DO UPDATE SET name=excluded.name,spec_json=excluded.spec_json,updated_at=excluded.updated_at",
+                (profile.profile_id, profile.project_id, profile.name, profile.model_dump_json(), profile.created_at.isoformat(), profile.updated_at.isoformat()),
+            )
+        return profile
+
+    def delete_profile(self, profile_id: str) -> None:
+        with self._connect() as db:
+            if db.execute("DELETE FROM tool_profiles WHERE profile_id=?", (profile_id,)).rowcount == 0:
+                raise KeyError("profile_not_found")
+
     def source(self, project_id: str) -> tuple[dict[str, Any], tuple[Operation, ...], tuple[str, ...]]:
         with self._connect() as db:
             row = db.execute("SELECT * FROM sources WHERE project_id=?", (project_id,)).fetchone()
@@ -115,15 +305,15 @@ class SQLiteStore:
         self.save_source(project_id, source, operations, selected)
         return tuple(operation for operation in operations if operation.operation_id in selected)
 
-    def create_release(self, project_id: str, tools: tuple[ToolManifest, ...]) -> Release:
+    def create_release(self, project_id: str, tools: tuple[ToolManifest | ActionToolManifest, ...], profile_id: str | None = None) -> Release:
         serialized = [tool.model_dump(mode="json") for tool in tools]
         manifest_hash = hashlib.sha256(json.dumps(serialized, sort_keys=True).encode()).hexdigest()
         release = Release(
             release_id=secrets.token_urlsafe(9), deployment_slug=secrets.token_urlsafe(12),
-            project_id=project_id, manifest_hash=manifest_hash, tools=tools, created_at=now(),
+            project_id=project_id, profile_id=profile_id, manifest_hash=manifest_hash, tools=tools, created_at=now(),
         )
         with self._connect() as db:
-            db.execute("INSERT INTO releases VALUES (?,?,?,?,?,?)", (release.release_id, release.deployment_slug, project_id, manifest_hash, json.dumps(serialized), release.created_at.isoformat()))
+            db.execute("INSERT INTO releases(release_id,deployment_slug,project_id,manifest_hash,tools_json,created_at,profile_id) VALUES(?,?,?,?,?,?,?)", (release.release_id, release.deployment_slug, project_id, manifest_hash, json.dumps(serialized), release.created_at.isoformat(), profile_id))
         return release
 
     def put_secret(self, project_id: str, encrypted_value: str | None) -> None:
@@ -152,11 +342,15 @@ class SQLiteStore:
         if row is None:
             raise KeyError("release_not_found")
         return Release(
-            release_id=row["release_id"], deployment_slug=row["deployment_slug"], project_id=row["project_id"],
-            manifest_hash=row["manifest_hash"], tools=tuple(ToolManifest.model_validate(item) for item in json.loads(row["tools_json"])),
+            release_id=row["release_id"], deployment_slug=row["deployment_slug"], project_id=row["project_id"], profile_id=row["profile_id"],
+            manifest_hash=row["manifest_hash"], tools=tuple(_manifest(item) for item in json.loads(row["tools_json"])),
             created_at=row["created_at"],
         )
 
     @staticmethod
     def _project(row: sqlite3.Row) -> Project:
         return Project(project_id=row["project_id"], name=row["name"], base_url=row["base_url"], auth_type=row["auth_type"], api_key_header=row["api_key_header"], created_at=row["created_at"])
+
+
+def _manifest(value: dict[str, Any]) -> ToolManifest | ActionToolManifest:
+    return ActionToolManifest.model_validate(value) if value.get("kind") == "action" else ToolManifest.model_validate(value)

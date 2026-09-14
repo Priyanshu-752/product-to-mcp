@@ -7,7 +7,7 @@ The first release supports:
 
 - OpenAPI-based HTTP APIs;
 - agent actions built from API operations;
-- grouped and chained workflows;
+- automatically derived API toolsets that filter agent-visible tools, plus optional chained actions;
 - validation and safer write-action policies;
 - immutable releases served by a managed Streamable HTTP gateway;
 - customer-owned Smithery publishing from the prototype UI.
@@ -18,12 +18,12 @@ Before implementing the complete production architecture, we will build a
 small working product that can be opened in the browser:
 
 1. the user enters a project name, API base URL, and OpenAPI JSON/YAML;
-2. the backend discovers supported read-only API operations;
-3. the user selects the operations to expose;
-4. the backend creates an immutable MCP manifest;
-5. the generated MCP runs at a real Streamable HTTP endpoint;
-6. the frontend can inspect and test its tools;
-7. the endpoint is deployed publicly and published to Smithery.
+2. the backend derives toolsets from OpenAPI tags or paths;
+3. the user selects which API toolsets the agent receives and may create single-call actions or safe one-write chains;
+4. approved actions can be added to a focused publishing profile;
+5. the backend previews and compiles the selected API tools and actions into an immutable manifest;
+6. the generated MCP exposes exactly those tools at a Streamable HTTP endpoint;
+7. the frontend tests every generated tool before the URL is published to Smithery.
 
 The prototype uses one repository, one frontend, one FastAPI backend, and
 SQLite for local development. Hosted deployments can use PostgreSQL by setting
@@ -31,9 +31,10 @@ SQLite for local development. Hosted deployments can use PostgreSQL by setting
 production storage, workers, and advanced authorization follow after this
 end-to-end path is working.
 
-This repository currently contains the product research and implementation
-plan. The documents are deliberately separated so the protocol, product
-architecture, operational design, and execution plan remain easy to review.
+This repository contains the working prototype, deterministic action layer,
+product research, and implementation documentation. The documents are
+separated so the protocol, architecture, operations, and release flow remain
+easy to review.
 
 ## Documents
 
@@ -56,6 +57,46 @@ architecture, operational design, and execution plan remain easy to review.
 8. [Agent action system flow](docs/07-agent-action-system-flow.md)
    - the new API-only flow where customer APIs become grouped, chained,
      validated agent actions before MCP release generation.
+9. [Deterministic MCP middle layer](docs/08-deterministic-mcp-middle-layer.md)
+   - CTO-facing explanation of the current API-wrapper prototype, the new
+     action-compilation layer, and the complete agent-action workflow.
+10. [Action layer implementation reference](docs/09-action-layer-implementation-reference.md)
+    - implemented models, validation rules, runtime outcomes, APIs, tests, and
+      deployment compatibility notes.
+11. [Agent-useful toolsets](plans/2026-09-14-agent-useful-toolsets.md)
+    - OpenAPI-derived toolsets, release-time selection, compatibility, and tests.
+
+## Local development
+
+Use three PowerShell terminals from the repository root.
+
+```powershell
+# Terminal 1: customer demo API
+python -m uvicorn main:app --app-dir examples/demo-api --host 127.0.0.1 --port 9000
+
+# Terminal 2: Product-to-MCP backend
+.\scripts\run-backend.ps1
+
+# Terminal 3: Product-to-MCP frontend
+.\scripts\run-frontend.ps1
+```
+
+Open `http://127.0.0.1:5173`, choose **No authentication**, and upload
+`examples/demo-openapi.yaml`. Use `examples/large-openapi-50.yaml` to test the
+large-catalog workflow.
+
+Verification commands:
+
+```powershell
+cd backend
+pytest -q
+
+cd ..\frontend
+npm.cmd test
+npm.cmd run test:e2e
+npm.cmd run build
+npm.cmd audit --audit-level=low
+```
 
 ## Core architectural decision
 

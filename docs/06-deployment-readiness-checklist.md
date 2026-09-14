@@ -29,6 +29,11 @@ PRODUCT_TO_MCP_CORS_ORIGINS=https://app.your-domain.com
 PRODUCT_TO_MCP_ALLOWED_HOSTS=api.your-domain.com
 PRODUCT_TO_MCP_SMITHERY_API_URL=https://api.smithery.ai
 PRODUCT_TO_MCP_MAX_OPENAPI_BYTES=20971520
+PRODUCT_TO_MCP_MAX_CHAIN_STEPS=10
+PRODUCT_TO_MCP_ACTION_TIMEOUT_SECONDS=60
+PRODUCT_TO_MCP_UPSTREAM_TIMEOUT_SECONDS=20
+PRODUCT_TO_MCP_MAX_UPSTREAM_RESPONSE_BYTES=2097152
+PRODUCT_TO_MCP_ALLOW_LEGACY_RELEASES=false
 PRODUCT_TO_MCP_MCP_BEARER_TOKEN=replace-with-long-random-token
 PRODUCT_TO_MCP_SECRET_ENCRYPTION_KEY=replace-with-long-random-secret
 ```
@@ -85,13 +90,13 @@ Frontend:
 1. Open the deployed frontend.
 2. Create a project.
 3. Upload `examples/demo-openapi.yaml`.
-4. Select generated tools.
-5. Generate release.
-6. Confirm Step 4 shows a public HTTPS MCP URL.
-7. Test at least one generated tool.
-8. Enter Smithery namespace, server name, and Smithery API key.
-9. Publish to Smithery.
-10. Verify Smithery returns status and MCP URL.
+4. Create a single-call action and validate it.
+5. Approve the action and add it to a publishing profile.
+6. Generate the profile-based release.
+7. Confirm Step 4 shows a public HTTPS MCP URL.
+8. Test at least one generated action.
+9. Enter Smithery namespace, server name, and Smithery API key.
+10. Publish to Smithery and verify the returned status and MCP URL.
 
 ## What has been made deployment-safe now
 
@@ -107,6 +112,10 @@ Frontend:
 - Release responses include the public MCP URL used for Smithery.
 - Optional MCP bearer token protection.
 - Smithery publish section in Step 4.
+- Deterministic operation groups and action validation.
+- Restricted chains with a maximum of one write operation.
+- Focused publishing profiles and immutable action manifests.
+- Backward-compatible execution for existing raw-operation releases.
 
 ## Still required for full production
 

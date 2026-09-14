@@ -52,6 +52,11 @@ class Settings(BaseModel):
     public_base_url: str = "http://127.0.0.1:8000"
     smithery_api_url: str = "https://api.smithery.ai"
     max_openapi_bytes: int = 20 * 1024 * 1024
+    max_chain_steps: int = 10
+    action_timeout_seconds: int = 60
+    upstream_timeout_seconds: int = 20
+    max_upstream_response_bytes: int = 2 * 1024 * 1024
+    allow_legacy_releases: bool = True
     mcp_bearer_token: str | None = None
     secret_encryption_key: str | None = None
     cors_origins: tuple[str, ...] = (
@@ -78,6 +83,11 @@ class Settings(BaseModel):
             public_base_url=os.getenv("PRODUCT_TO_MCP_PUBLIC_BASE_URL", cls.model_fields["public_base_url"].default),
             smithery_api_url=os.getenv("PRODUCT_TO_MCP_SMITHERY_API_URL", cls.model_fields["smithery_api_url"].default),
             max_openapi_bytes=int(os.getenv("PRODUCT_TO_MCP_MAX_OPENAPI_BYTES", str(20 * 1024 * 1024))),
+            max_chain_steps=int(os.getenv("PRODUCT_TO_MCP_MAX_CHAIN_STEPS", "10")),
+            action_timeout_seconds=int(os.getenv("PRODUCT_TO_MCP_ACTION_TIMEOUT_SECONDS", "60")),
+            upstream_timeout_seconds=int(os.getenv("PRODUCT_TO_MCP_UPSTREAM_TIMEOUT_SECONDS", "20")),
+            max_upstream_response_bytes=int(os.getenv("PRODUCT_TO_MCP_MAX_UPSTREAM_RESPONSE_BYTES", str(2 * 1024 * 1024))),
+            allow_legacy_releases=os.getenv("PRODUCT_TO_MCP_ALLOW_LEGACY_RELEASES", "true").lower() in {"1", "true", "yes"},
             mcp_bearer_token=os.getenv("PRODUCT_TO_MCP_MCP_BEARER_TOKEN") or None,
             secret_encryption_key=os.getenv("PRODUCT_TO_MCP_SECRET_ENCRYPTION_KEY") or None,
             cors_origins=env_list("PRODUCT_TO_MCP_CORS_ORIGINS", cls.model_fields["cors_origins"].default),

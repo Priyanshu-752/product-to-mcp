@@ -12,7 +12,7 @@ paths:
     get:
       operationId: getProduct
       parameters:
-        - {name: id, in: path, required: true, schema: {type: string}}
+        - {name: id, in: path, required: true, description: Product identifier, schema: {type: string}}
       responses: {'200': {description: ok}}
     delete:
       operationId: deleteProduct
@@ -21,6 +21,7 @@ paths:
       operationId: createProduct
       requestBody:
         required: true
+        description: Product creation payload.
         content:
           application/json:
             schema:
@@ -32,10 +33,12 @@ paths:
       responses: {'201': {description: created}}
 """)
     operations = discover_operations(document)
-    assert [item.tool_name for item in operations] == ["getproduct", "createproduct", "deleteproduct"]
+    assert [item.tool_name for item in operations] == ["get_product", "create_product", "delete_product"]
     assert operations[0].supported is True
+    assert operations[0].input_schema["properties"]["id"]["description"] == "Product identifier"
     assert operations[1].supported is True
     assert operations[1].input_schema["properties"]["body"]["required"] == ["name"]
+    assert operations[1].input_schema["properties"]["body"]["description"] == "Product creation payload."
     assert operations[2].supported is True
     tools = compile_tools(operations, ("getProduct", "createProduct", "deleteProduct"))
     assert tools[0].path == "/products/{id}"
